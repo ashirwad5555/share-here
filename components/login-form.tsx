@@ -50,11 +50,6 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     }
   }
 
-  const handleDemoLogin = (username: string, password: string) => {
-    setFormData({ username, password })
-    setError("")
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -142,66 +137,6 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                 )}
               </Button>
             </form>
-          </CardContent>
-        </Card>
-
-        {/* Demo Accounts */}
-        <Card className="mt-6 shadow-lg border-0 bg-white/60 backdrop-blur-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg font-semibold text-slate-800">Demo Accounts</CardTitle>
-            <CardDescription className="text-slate-600">Click any button to auto-fill credentials</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin("admin", "admin123")}
-                disabled={isLoading}
-                className="h-10 border-slate-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"
-              >
-                <div className="text-center">
-                  <div className="font-medium text-slate-800">Admin</div>
-                  <div className="text-xs text-slate-500">Full Access</div>
-                </div>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin("john", "john123")}
-                disabled={isLoading}
-                className="h-10 border-slate-200 hover:bg-green-50 hover:border-green-300 transition-colors"
-              >
-                <div className="text-center">
-                  <div className="font-medium text-slate-800">John</div>
-                  <div className="text-xs text-slate-500">User</div>
-                </div>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin("sarah", "sarah123")}
-                disabled={isLoading}
-                className="h-10 border-slate-200 hover:bg-purple-50 hover:border-purple-300 transition-colors"
-              >
-                <div className="text-center">
-                  <div className="font-medium text-slate-800">Sarah</div>
-                  <div className="text-xs text-slate-500">User</div>
-                </div>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDemoLogin("demo", "demo123")}
-                disabled={isLoading}
-                className="h-10 border-slate-200 hover:bg-orange-50 hover:border-orange-300 transition-colors"
-              >
-                <div className="text-center">
-                  <div className="font-medium text-slate-800">Demo</div>
-                  <div className="text-xs text-slate-500">Limited</div>
-                </div>
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
