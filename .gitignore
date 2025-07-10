@@ -25,3 +25,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Authentication files - NEVER commit these!
+/auth/users.json
+/auth/secrets.json
+auth-config.json
+.auth-secret
