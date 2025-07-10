@@ -20,7 +20,12 @@ export default function Component() {
   const [entries, setEntries] = useState<TextEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [newEntry, setNewEntry] = useState({ title: "", content: "" })
+  const [newEntry, setNewEntry] = useState({
+    title: "",
+    content: "",
+    titleError: "",
+    contentError: "",
+  })
   const [editEntry, setEditEntry] = useState({ title: "", content: "" })
 
   // Fetch all entries
@@ -38,18 +43,43 @@ export default function Component() {
 
   // Create new entry
   const createEntry = async () => {
-    if (!newEntry.title.trim() || !newEntry.content.trim()) return
+    // Clear any previous error states
+    setNewEntry((prev) => ({ ...prev, titleError: "", contentError: "" }))
+
+    // Validate inputs
+    let hasError = false
+    const updatedEntry = { ...newEntry }
+
+    if (!newEntry.title.trim()) {
+      updatedEntry.titleError = "Title is required"
+      hasError = true
+    }
+
+    if (!newEntry.content.trim()) {
+      updatedEntry.contentError = "Content is required"
+      hasError = true
+    }
+
+    if (hasError) {
+      setNewEntry(updatedEntry)
+      return
+    }
 
     try {
       const response = await fetch("/api/content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newEntry),
+        body: JSON.stringify({
+          title: newEntry.title.trim(),
+          content: newEntry.content.trim(),
+        }),
       })
 
       if (response.ok) {
-        setNewEntry({ title: "", content: "" })
+        setNewEntry({ title: "", content: "", titleError: "", contentError: "" })
         fetchEntries()
+      } else {
+        console.error("Failed to create entry")
       }
     } catch (error) {
       console.error("Error creating entry:", error)
@@ -144,8 +174,16 @@ export default function Component() {
                 id="new-title"
                 placeholder="Enter title..."
                 value={newEntry.title}
-                onChange={(e) => setNewEntry({ ...newEntry, title: e.target.value })}
+                onChange={(e) =>
+                  setNewEntry({
+                    ...newEntry,
+                    title: e.target.value,
+                    titleError: "", // Clear error when user types
+                  })
+                }
+                className={newEntry.titleError ? "border-red-500" : ""}
               />
+              {newEntry.titleError && <p className="text-red-500 text-sm mt-1">{newEntry.titleError}</p>}
             </div>
             <div>
               <Label htmlFor="new-content">Content</Label>
@@ -154,8 +192,16 @@ export default function Component() {
                 placeholder="Enter your content..."
                 rows={4}
                 value={newEntry.content}
-                onChange={(e) => setNewEntry({ ...newEntry, content: e.target.value })}
+                onChange={(e) =>
+                  setNewEntry({
+                    ...newEntry,
+                    content: e.target.value,
+                    contentError: "", // Clear error when user types
+                  })
+                }
+                className={newEntry.contentError ? "border-red-500" : ""}
               />
+              {newEntry.contentError && <p className="text-red-500 text-sm mt-1">{newEntry.contentError}</p>}
             </div>
             <Button onClick={createEntry} className="w-full">
               <Plus className="w-4 h-4 mr-2" />
