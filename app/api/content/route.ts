@@ -14,133 +14,267 @@ interface TextEntry {
 
 interface DataStructure {
   entries: TextEntry[]
+  lastModified: string
 }
 
-// Ensure data directory and file exist
+// Ensure data directory and file exist with proper error handling
 async function ensureDataFile(): Promise<DataStructure> {
   try {
     const dataDir = path.dirname(DATA_FILE)
-    await fs.mkdir(dataDir, { recursive: true })
 
+    // Create directory if it doesn't exist
     try {
-      const data = await fs.readFile(DATA_FILE, "utf8")
-      return JSON.parse(data)
+      await fs.access(dataDir)
     } catch {
-      // File doesn't exist, create it
-      const initialData: DataStructure = { entries: [] }
-      await fs.writeFile(DATA_FILE, JSON.stringify(initialData, null, 2))
+      await fs.mkdir(dataDir, { recursive: true })
+      console.log("Created data directory:", dataDir)
+    }
+
+    // Try to read existing file
+    try {
+      const fileContent = await fs.readFile(DATA_FILE, "utf8")
+      const parsedData = JSON.parse(fileContent)
+
+      // Validate and fix data structure
+      const validData: DataStructure = {
+        entries: Array.isArray(parsedData.entries) ? parsedData.entries : [],
+        lastModified: parsedData.lastModified || new Date().toISOString(),
+      }
+
+      return validData
+    } catch (readError) {
+      // File doesn't exist or is corrupted, create new one
+      const initialData: DataStructure = {
+        entries: [],
+        lastModified: new Date().toISOString(),
+      }
+
+      await fs.writeFile(DATA_FILE, JSON.stringify(initialData, null, 2), "utf8")
+      console.log("Created new data file at:", DATA_FILE)
       return initialData
     }
   } catch (error) {
-    console.error("Error ensuring data file:", error)
-    return { entries: [] }
+    console.error("Critical error in ensureDataFile:", error)
+    // Return safe fallback
+    return {
+      entries: [],
+      lastModified: new Date().toISOString(),
+    }
   }
 }
 
-// Read data from file
-async function readData(): Promise<DataStructure> {
-  return await ensureDataFile()
-}
+// Atomic write operation to prevent data corruption
+async function writeDataSafely(data: DataStructure): Promise<void> {
+  const tempFile = DATA_FILE + ".tmp"
 
-// Write data to file
-async function writeData(data: DataStructure): Promise<void> {
   try {
-    await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2))
+    // Update timestamp
+    data.lastModified = new Date().toISOString()
+
+    // Write to temporary file first
+    const jsonData = JSON.stringify(data, null, 2)
+    await fs.writeFile(tempFile, jsonData, "utf8")
+
+    // Atomic rename (replaces original file)
+    await fs.rename(tempFile, DATA_FILE)
+
+    console.log(`✅ Data successfully written to ${DATA_FILE} at ${data.lastModified}`)
+    console.log(`📊 Total entries: ${data.entries.length}`)
   } catch (error) {
-    console.error("Error writing data:", error)
-    throw error
+    console.error("❌ Error writing data:", error)
+
+    // Clean up temp file if it exists
+    try {
+      await fs.unlink(tempFile)
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    throw new Error("Failed to save data to file")
   }
 }
 
 // GET - Read all entries
 export async function GET() {
   try {
-    const data = await readData()
-    return NextResponse.json(data)
+    console.log("📖 Reading data from file...")
+    const data = await ensureDataFile()
+    console.log(`✅ Retrieved ${data.entries.length} entries`)
+
+    return NextResponse.json({
+      success: true,
+      ...data,
+    })
   } catch (error) {
-    return NextResponse.json({ error: "Failed to read entries" }, { status: 500 })
+    console.error("❌ Error in GET:", error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to read entries",
+        entries: [],
+        lastModified: new Date().toISOString(),
+      },
+      { status: 500 },
+    )
   }
 }
 
 // POST - Create new entry
 export async function POST(request: NextRequest) {
   try {
-    const { title, content } = await request.json()
+    console.log("📝 Creating new entry...")
 
-    if (!title || !content) {
-      return NextResponse.json({ error: "Title and content are required" }, { status: 400 })
+    const body = await request.json()
+    const { title, content } = body
+
+    // Validate input
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return NextResponse.json(
+        { success: false, error: "Title is required and must be a non-empty string" },
+        { status: 400 },
+      )
     }
 
-    const data = await readData()
+    if (!content || typeof content !== "string" || !content.trim()) {
+      return NextResponse.json(
+        { success: false, error: "Content is required and must be a non-empty string" },
+        { status: 400 },
+      )
+    }
+
+    // Read current data
+    const data = await ensureDataFile()
+
+    // Create new entry
+    const now = new Date().toISOString()
     const newEntry: TextEntry = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: title.trim(),
       content: content.trim(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     }
 
-    data.entries.unshift(newEntry) // Add to beginning of array
-    await writeData(data)
+    // Add to beginning of array
+    data.entries.unshift(newEntry)
 
-    return NextResponse.json({ success: true, entry: newEntry })
+    // Save to file
+    await writeDataSafely(data)
+
+    console.log(`✅ Created entry: "${newEntry.title}" (ID: ${newEntry.id})`)
+
+    return NextResponse.json({
+      success: true,
+      entry: newEntry,
+      message: "Entry created successfully",
+    })
   } catch (error) {
-    return NextResponse.json({ error: "Failed to create entry" }, { status: 500 })
+    console.error("❌ Error in POST:", error)
+    return NextResponse.json({ success: false, error: "Failed to create entry" }, { status: 500 })
   }
 }
 
 // PUT - Update existing entry
 export async function PUT(request: NextRequest) {
   try {
-    const { id, title, content } = await request.json()
+    console.log("✏️ Updating entry...")
 
-    if (!id || !title || !content) {
-      return NextResponse.json({ error: "ID, title, and content are required" }, { status: 400 })
+    const body = await request.json()
+    const { id, title, content } = body
+
+    // Validate input
+    if (!id || typeof id !== "string") {
+      return NextResponse.json({ success: false, error: "Valid ID is required" }, { status: 400 })
     }
 
-    const data = await readData()
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return NextResponse.json(
+        { success: false, error: "Title is required and must be a non-empty string" },
+        { status: 400 },
+      )
+    }
+
+    if (!content || typeof content !== "string" || !content.trim()) {
+      return NextResponse.json(
+        { success: false, error: "Content is required and must be a non-empty string" },
+        { status: 400 },
+      )
+    }
+
+    // Read current data
+    const data = await ensureDataFile()
+
+    // Find entry to update
     const entryIndex = data.entries.findIndex((entry) => entry.id === id)
 
     if (entryIndex === -1) {
-      return NextResponse.json({ error: "Entry not found" }, { status: 404 })
+      return NextResponse.json({ success: false, error: "Entry not found" }, { status: 404 })
     }
 
-    data.entries[entryIndex] = {
+    // Update entry
+    const updatedEntry = {
       ...data.entries[entryIndex],
       title: title.trim(),
       content: content.trim(),
       updatedAt: new Date().toISOString(),
     }
 
-    await writeData(data)
+    data.entries[entryIndex] = updatedEntry
 
-    return NextResponse.json({ success: true, entry: data.entries[entryIndex] })
+    // Save to file
+    await writeDataSafely(data)
+
+    console.log(`✅ Updated entry: "${updatedEntry.title}" (ID: ${id})`)
+
+    return NextResponse.json({
+      success: true,
+      entry: updatedEntry,
+      message: "Entry updated successfully",
+    })
   } catch (error) {
-    return NextResponse.json({ error: "Failed to update entry" }, { status: 500 })
+    console.error("❌ Error in PUT:", error)
+    return NextResponse.json({ success: false, error: "Failed to update entry" }, { status: 500 })
   }
 }
 
 // DELETE - Delete entry
 export async function DELETE(request: NextRequest) {
   try {
-    const { id } = await request.json()
+    console.log("🗑️ Deleting entry...")
 
-    if (!id) {
-      return NextResponse.json({ error: "ID is required" }, { status: 400 })
+    const body = await request.json()
+    const { id } = body
+
+    // Validate input
+    if (!id || typeof id !== "string") {
+      return NextResponse.json({ success: false, error: "Valid ID is required" }, { status: 400 })
     }
 
-    const data = await readData()
+    // Read current data
+    const data = await ensureDataFile()
+
+    // Find entry to delete
     const entryIndex = data.entries.findIndex((entry) => entry.id === id)
 
     if (entryIndex === -1) {
-      return NextResponse.json({ error: "Entry not found" }, { status: 404 })
+      return NextResponse.json({ success: false, error: "Entry not found" }, { status: 404 })
     }
 
+    // Remove entry
     const deletedEntry = data.entries.splice(entryIndex, 1)[0]
-    await writeData(data)
 
-    return NextResponse.json({ success: true, deletedEntry })
+    // Save to file
+    await writeDataSafely(data)
+
+    console.log(`✅ Deleted entry: "${deletedEntry.title}" (ID: ${id})`)
+
+    return NextResponse.json({
+      success: true,
+      deletedEntry,
+      message: "Entry deleted successfully",
+    })
   } catch (error) {
-    return NextResponse.json({ error: "Failed to delete entry" }, { status: 500 })
+    console.error("❌ Error in DELETE:", error)
+    return NextResponse.json({ success: false, error: "Failed to delete entry" }, { status: 500 })
   }
 }
