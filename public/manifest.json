@@ -1,12 +1,13 @@
 {
-  "name": "Global Text Storage",
-  "short_name": "TextStorage",
-  "description": "Store and access your text content from anywhere",
+  "name": "Global Text Storage - Shared Database",
+  "short_name": "GlobalText",
+  "description": "Truly global text storage with shared database. Everyone sees the same content in real-time.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#3b82f6",
+  "theme_color": "#10b981",
   "orientation": "portrait",
+  "categories": ["productivity", "utilities", "social"],
   "icons": [
     {
       "src": "/placeholder.svg",

@@ -2,24 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  Trash2,
-  Edit,
-  Plus,
-  Save,
-  X,
-  RefreshCw,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-  Info,
-  Smartphone,
-} from "lucide-react"
+import { Trash2, Edit, Plus, Save, X, RefreshCw, CheckCircle, AlertCircle, Loader2, Share2, Globe } from "lucide-react"
 
 interface TextEntry {
   id: string
@@ -40,6 +27,8 @@ interface ApiResponse {
   deletedEntry?: TextEntry
   message?: string
   error?: string
+  storage?: string
+  isGlobal?: boolean
 }
 
 interface FormState {
@@ -51,15 +40,24 @@ interface FormState {
 }
 
 export default function Component() {
-  const [data, setData] = useState<{ entries: TextEntry[]; lastModified: string; count: number }>({
+  const [data, setData] = useState<{
+    entries: TextEntry[]
+    lastModified: string
+    count: number
+    isGlobal: boolean
+    storage: string
+  }>({
     entries: [],
     lastModified: "",
     count: 0,
+    isGlobal: false,
+    storage: "unknown",
   })
+
   const [isLoading, setIsLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [notification, setNotification] = useState<{
-    type: "success" | "error" | "info"
+    type: "success" | "error"
     message: string
   } | null>(null)
 
@@ -79,56 +77,43 @@ export default function Component() {
     isSubmitting: false,
   })
 
-  // Show notification helper with auto-dismiss
-  const showNotification = useCallback((type: "success" | "error" | "info", message: string) => {
+  // Show notification helper
+  const showNotification = useCallback((type: "success" | "error", message: string) => {
     setNotification({ type, message })
-    setTimeout(() => setNotification(null), type === "error" ? 8000 : 5000)
+    setTimeout(() => setNotification(null), 3000)
   }, [])
 
-  // Validate form data with mobile-friendly messages
+  // Validate form
   const validateForm = (title: string, content: string) => {
     const errors = { titleError: "", contentError: "" }
 
     if (!title.trim()) {
-      errors.titleError = "Please enter a title"
-    } else if (title.trim().length < 2) {
-      errors.titleError = "Title needs at least 2 characters"
+      errors.titleError = "Title is required"
     } else if (title.trim().length > 100) {
-      errors.titleError = "Title is too long (max 100 characters)"
+      errors.titleError = "Title too long"
     }
 
     if (!content.trim()) {
-      errors.contentError = "Please enter some content"
-    } else if (content.trim().length < 5) {
-      errors.contentError = "Content needs at least 5 characters"
+      errors.contentError = "Content is required"
     } else if (content.trim().length > 5000) {
-      errors.contentError = "Content is too long (max 5000 characters)"
+      errors.contentError = "Content too long"
     }
 
     return errors
   }
 
-  // Enhanced fetch with better mobile error handling
+  // Fetch entries
   const fetchEntries = useCallback(async () => {
     try {
-      console.log("🔄 Fetching entries...")
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
-
       const response = await fetch("/api/content", {
         method: "GET",
         headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          Pragma: "no-cache",
+          "Cache-Control": "no-cache",
         },
-        signal: controller.signal,
       })
 
-      clearTimeout(timeoutId)
-
       if (!response.ok) {
-        throw new Error(`Network error: ${response.status} ${response.statusText}`)
+        throw new Error(`Error: ${response.status}`)
       }
 
       const result: ApiResponse = await response.json()
@@ -138,76 +123,44 @@ export default function Component() {
           entries: result.entries,
           lastModified: result.lastModified || new Date().toISOString(),
           count: result.count || result.entries.length,
+          isGlobal: result.isGlobal || false,
+          storage: result.storage || "unknown",
         })
-        console.log(`✅ Loaded ${result.entries.length} entries`)
-
-        if (result.entries.length === 0) {
-          showNotification("info", "No entries yet. Create your first one below!")
-        }
       } else {
-        throw new Error(result.error || "Failed to load entries")
+        throw new Error(result.error || "Failed to load")
       }
     } catch (error) {
-      console.error("❌ Error fetching entries:", error)
-
-      if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          showNotification("error", "Request timed out. Please check your connection and try again.")
-        } else if (error.message.includes("Network")) {
-          showNotification("error", "Network error. Please check your internet connection.")
-        } else {
-          showNotification("error", `Failed to load: ${error.message}`)
-        }
-      } else {
-        showNotification("error", "Something went wrong. Please try refreshing the page.")
-      }
+      console.error("Error fetching entries:", error)
+      showNotification("error", "Failed to load entries")
     } finally {
       setIsLoading(false)
     }
   }, [showNotification])
 
-  // Enhanced create entry with mobile optimizations
+  // Create entry
   const createEntry = async () => {
     const errors = validateForm(newEntry.title, newEntry.content)
 
     if (errors.titleError || errors.contentError) {
       setNewEntry((prev) => ({ ...prev, ...errors }))
-      // Scroll to first error on mobile
-      const firstError = errors.titleError ? "new-title" : "new-content"
-      document.getElementById(firstError)?.scrollIntoView({ behavior: "smooth", block: "center" })
       return
     }
 
     setNewEntry((prev) => ({ ...prev, isSubmitting: true, titleError: "", contentError: "" }))
 
     try {
-      console.log("📝 Creating new entry...")
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout for creation
-
       const response = await fetch("/api/content", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: newEntry.title.trim(),
           content: newEntry.content.trim(),
         }),
-        signal: controller.signal,
       })
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        throw new Error(`Network error: ${response.status} ${response.statusText}`)
-      }
 
       const result: ApiResponse = await response.json()
 
       if (result.success && result.entry) {
-        // Clear form
         setNewEntry({
           title: "",
           content: "",
@@ -216,35 +169,20 @@ export default function Component() {
           isSubmitting: false,
         })
 
-        // Refresh data
         await fetchEntries()
-
-        showNotification("success", `"${result.entry.title}" created successfully!`)
-        console.log("✅ Entry created:", result.entry.title)
-
-        // Scroll to top to see the new entry on mobile
+        showNotification("success", "Entry created!")
         window.scrollTo({ top: 0, behavior: "smooth" })
       } else {
-        throw new Error(result.error || "Failed to create entry")
+        throw new Error(result.error || "Failed to create")
       }
     } catch (error) {
-      console.error("❌ Error creating entry:", error)
-
-      if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          showNotification("error", "Creation timed out. Please try again.")
-        } else {
-          showNotification("error", `Failed to create: ${error.message}`)
-        }
-      } else {
-        showNotification("error", "Failed to create entry. Please try again.")
-      }
+      showNotification("error", "Failed to create entry")
     } finally {
       setNewEntry((prev) => ({ ...prev, isSubmitting: false }))
     }
   }
 
-  // Enhanced update entry
+  // Update entry
   const updateEntry = async (id: string) => {
     const errors = validateForm(editEntry.title, editEntry.content)
 
@@ -256,13 +194,9 @@ export default function Component() {
     setEditEntry((prev) => ({ ...prev, isSubmitting: true, titleError: "", contentError: "" }))
 
     try {
-      console.log("✏️ Updating entry...")
-
       const response = await fetch("/api/content", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id,
           title: editEntry.title.trim(),
@@ -270,14 +204,9 @@ export default function Component() {
         }),
       })
 
-      if (!response.ok) {
-        throw new Error(`Network error: ${response.status} ${response.statusText}`)
-      }
-
       const result: ApiResponse = await response.json()
 
       if (result.success && result.entry) {
-        // Clear edit state
         setEditingId(null)
         setEditEntry({
           title: "",
@@ -287,62 +216,46 @@ export default function Component() {
           isSubmitting: false,
         })
 
-        // Refresh data
         await fetchEntries()
-
-        showNotification("success", `"${result.entry.title}" updated successfully!`)
-        console.log("✅ Entry updated:", result.entry.title)
+        showNotification("success", "Entry updated!")
       } else {
-        throw new Error(result.error || "Failed to update entry")
+        throw new Error(result.error || "Failed to update")
       }
     } catch (error) {
-      console.error("❌ Error updating entry:", error)
-      showNotification("error", `Failed to update: ${error instanceof Error ? error.message : "Unknown error"}`)
+      showNotification("error", "Failed to update entry")
     } finally {
       setEditEntry((prev) => ({ ...prev, isSubmitting: false }))
     }
   }
 
-  // Enhanced delete entry with mobile-friendly confirmation
+  // Delete entry
   const deleteEntry = async (id: string) => {
     const entry = data.entries.find((e) => e.id === id)
     if (!entry) return
 
-    // Mobile-friendly confirmation
-    const confirmMessage = `Delete "${entry.title.length > 30 ? entry.title.substring(0, 30) + "..." : entry.title}"?`
-    if (!confirm(confirmMessage)) return
+    if (!confirm(`Delete "${entry.title}"?`)) return
 
     try {
-      console.log("🗑️ Deleting entry...")
-
       const response = await fetch("/api/content", {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       })
 
-      if (!response.ok) {
-        throw new Error(`Network error: ${response.status} ${response.statusText}`)
-      }
-
       const result: ApiResponse = await response.json()
 
-      if (result.success && result.deletedEntry) {
+      if (result.success) {
         await fetchEntries()
-        showNotification("success", `"${result.deletedEntry.title}" deleted successfully!`)
-        console.log("✅ Entry deleted:", result.deletedEntry.title)
+        showNotification("success", "Entry deleted!")
       } else {
-        throw new Error(result.error || "Failed to delete entry")
+        throw new Error(result.error || "Failed to delete")
       }
     } catch (error) {
-      console.error("❌ Error deleting entry:", error)
-      showNotification("error", `Failed to delete: ${error instanceof Error ? error.message : "Unknown error"}`)
+      showNotification("error", "Failed to delete entry")
     }
   }
 
-  // Start editing with mobile optimizations
+  // Start editing
   const startEdit = (entry: TextEntry) => {
     setEditingId(entry.id)
     setEditEntry({
@@ -352,12 +265,6 @@ export default function Component() {
       contentError: "",
       isSubmitting: false,
     })
-
-    // Scroll to the editing entry on mobile
-    setTimeout(() => {
-      const element = document.getElementById(`entry-${entry.id}`)
-      element?.scrollIntoView({ behavior: "smooth", block: "center" })
-    }, 100)
   }
 
   // Cancel editing
@@ -372,141 +279,134 @@ export default function Component() {
     })
   }
 
-  // Load data on component mount
+  // Share URL
+  const shareUrl = async () => {
+    const url = window.location.href
+    const shareData = {
+      title: "Text Storage App",
+      text: "Check out this text storage app!",
+      url: url,
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+      } catch (error) {
+        console.log("Share cancelled")
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url)
+        showNotification("success", "URL copied!")
+      } catch (error) {
+        showNotification("error", "Could not copy URL")
+      }
+    }
+  }
+
+  // Load data on mount
   useEffect(() => {
     fetchEntries()
   }, [fetchEntries])
 
-  // Mobile loading screen
+  // Loading screen
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Loading Your Data</h2>
-          <p className="text-gray-600">Please wait a moment...</p>
+          <h2 className="text-xl font-semibold text-gray-800">Loading...</h2>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Mobile-optimized container */}
-      <div className="max-w-4xl mx-auto px-3 py-4 sm:px-4 sm:py-8">
-        {/* Notification - Mobile optimized */}
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* Notification */}
         {notification && (
           <Alert
-            className={`mb-4 ${
+            className={`mb-6 ${
               notification.type === "success"
-                ? "border-green-500 bg-green-50"
-                : notification.type === "error"
-                  ? "border-red-500 bg-red-50"
-                  : "border-blue-500 bg-blue-50"
+                ? "border-green-500 bg-green-50 text-green-800"
+                : "border-red-500 bg-red-50 text-red-800"
             }`}
           >
             {notification.type === "success" ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            ) : notification.type === "error" ? (
-              <AlertCircle className="h-4 w-4 text-red-600" />
+              <CheckCircle className="h-4 w-4" />
             ) : (
-              <Info className="h-4 w-4 text-blue-600" />
+              <AlertCircle className="h-4 w-4" />
             )}
-            <AlertDescription
-              className={`text-sm ${
-                notification.type === "success"
-                  ? "text-green-800"
-                  : notification.type === "error"
-                    ? "text-red-800"
-                    : "text-blue-800"
-              }`}
-            >
-              {notification.message}
-            </AlertDescription>
+            <AlertDescription>{notification.message}</AlertDescription>
           </Alert>
         )}
 
-        {/* Header - Mobile optimized */}
-        <div className="text-center mb-6">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <Smartphone className="w-6 h-6 text-blue-600" />
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Global Text Storage</h1>
-          </div>
-          <p className="text-gray-600 text-sm sm:text-base px-2">Store and access your text content from anywhere</p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchEntries}
-              disabled={isLoading}
-              className="w-full sm:w-auto bg-transparent"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh ({data.count} entries)
-            </Button>
-            {data.lastModified && (
-              <p className="text-xs text-gray-500 text-center">
-                Updated: {new Date(data.lastModified).toLocaleString()}
-              </p>
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            {data.isGlobal ? (
+              <Globe className="w-8 h-8 text-green-600" />
+            ) : (
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">T</span>
+              </div>
             )}
+            <h1 className="text-3xl font-bold text-gray-900">{data.isGlobal ? "Global Notes" : "My Notes"}</h1>
           </div>
+
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <Button variant="outline" size="sm" onClick={fetchEntries} disabled={isLoading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+              {data.count} notes
+            </Button>
+
+            <Button variant="outline" size="sm" onClick={shareUrl}>
+              <Share2 className="w-4 h-4 mr-2" />
+              Share
+            </Button>
+          </div>
+
+          {data.isGlobal && (
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              Global database active
+            </div>
+          )}
         </div>
 
-        {/* Create New Entry - Mobile optimized */}
-        <Card className="mb-6">
-          <CardHeader className="pb-4">
+        {/* Create New Entry */}
+        <Card className="mb-8 shadow-sm">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Plus className="w-5 h-5" />
-              Add New Content
+              Add New Note
             </CardTitle>
-            <CardDescription className="text-sm">Create a new text entry (stored in memory)</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="new-title" className="text-sm font-medium">
-                Title *
-              </Label>
               <Input
-                id="new-title"
-                placeholder="Enter title..."
+                placeholder="Note title..."
                 value={newEntry.title}
-                onChange={(e) =>
-                  setNewEntry((prev) => ({
-                    ...prev,
-                    title: e.target.value,
-                    titleError: "",
-                  }))
-                }
-                className={`mt-1 ${newEntry.titleError ? "border-red-500" : ""}`}
+                onChange={(e) => setNewEntry((prev) => ({ ...prev, title: e.target.value, titleError: "" }))}
+                className={newEntry.titleError ? "border-red-500" : ""}
                 disabled={newEntry.isSubmitting}
                 maxLength={100}
               />
-              {newEntry.titleError && <p className="text-red-500 text-xs mt-1">{newEntry.titleError}</p>}
-              <p className="text-xs text-gray-500 mt-1">{newEntry.title.length}/100 characters</p>
+              {newEntry.titleError && <p className="text-red-500 text-sm mt-1">{newEntry.titleError}</p>}
             </div>
 
             <div>
-              <Label htmlFor="new-content" className="text-sm font-medium">
-                Content *
-              </Label>
               <Textarea
-                id="new-content"
-                placeholder="Enter your content..."
+                placeholder="Write your note here..."
                 rows={4}
                 value={newEntry.content}
-                onChange={(e) =>
-                  setNewEntry((prev) => ({
-                    ...prev,
-                    content: e.target.value,
-                    contentError: "",
-                  }))
-                }
-                className={`mt-1 resize-none ${newEntry.contentError ? "border-red-500" : ""}`}
+                onChange={(e) => setNewEntry((prev) => ({ ...prev, content: e.target.value, contentError: "" }))}
+                className={`resize-none ${newEntry.contentError ? "border-red-500" : ""}`}
                 disabled={newEntry.isSubmitting}
                 maxLength={5000}
               />
-              {newEntry.contentError && <p className="text-red-500 text-xs mt-1">{newEntry.contentError}</p>}
-              <p className="text-xs text-gray-500 mt-1">{newEntry.content.length}/5000 characters</p>
+              {newEntry.contentError && <p className="text-red-500 text-sm mt-1">{newEntry.contentError}</p>}
             </div>
 
             <Button onClick={createEntry} className="w-full" disabled={newEntry.isSubmitting} size="lg">
@@ -518,28 +418,28 @@ export default function Component() {
               ) : (
                 <>
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Entry
+                  Add Note
                 </>
               )}
             </Button>
           </CardContent>
         </Card>
 
-        {/* Entries List - Mobile optimized */}
+        {/* Entries List */}
         <div className="space-y-4">
           {data.entries.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <div className="text-gray-500">
-                  <Plus className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p className="text-lg font-medium mb-1">No entries yet</p>
-                  <p className="text-sm">Create your first entry above to get started!</p>
+            <Card className="shadow-sm">
+              <CardContent className="text-center py-12">
+                <div className="text-gray-400 mb-4">
+                  <Plus className="w-16 h-16 mx-auto opacity-50" />
                 </div>
+                <h3 className="text-lg font-medium text-gray-600 mb-2">No notes yet</h3>
+                <p className="text-gray-500">Create your first note above to get started!</p>
               </CardContent>
             </Card>
           ) : (
             data.entries.map((entry) => (
-              <Card key={entry.id} id={`entry-${entry.id}`} className="overflow-hidden">
+              <Card key={entry.id} className="shadow-sm hover:shadow-md transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -548,66 +448,50 @@ export default function Component() {
                           <Input
                             value={editEntry.title}
                             onChange={(e) =>
-                              setEditEntry((prev) => ({
-                                ...prev,
-                                title: e.target.value,
-                                titleError: "",
-                              }))
+                              setEditEntry((prev) => ({ ...prev, title: e.target.value, titleError: "" }))
                             }
                             className={`font-semibold ${editEntry.titleError ? "border-red-500" : ""}`}
-                            placeholder="Enter title..."
                             disabled={editEntry.isSubmitting}
                             maxLength={100}
                           />
-                          {editEntry.titleError && <p className="text-red-500 text-xs">{editEntry.titleError}</p>}
+                          {editEntry.titleError && <p className="text-red-500 text-sm">{editEntry.titleError}</p>}
                         </div>
                       ) : (
-                        <CardTitle className="text-base sm:text-lg leading-tight break-words">{entry.title}</CardTitle>
+                        <div>
+                          <CardTitle className="text-lg leading-tight break-words flex items-center gap-2">
+                            {entry.title}
+                            {data.isGlobal && <Globe className="w-4 h-4 text-green-600 flex-shrink-0" />}
+                          </CardTitle>
+                          <p className="text-sm text-gray-500 mt-1">{new Date(entry.createdAt).toLocaleDateString()}</p>
+                        </div>
                       )}
-                      <CardDescription className="text-xs mt-1">
-                        <div>Created: {new Date(entry.createdAt).toLocaleDateString()}</div>
-                        {entry.updatedAt !== entry.createdAt && (
-                          <div>Updated: {new Date(entry.updatedAt).toLocaleDateString()}</div>
-                        )}
-                      </CardDescription>
                     </div>
 
-                    {/* Action buttons - Mobile optimized */}
-                    <div className="flex gap-1 flex-shrink-0">
+                    {/* Action buttons */}
+                    <div className="flex gap-2 flex-shrink-0">
                       {editingId === entry.id ? (
                         <>
-                          <Button
-                            size="sm"
-                            onClick={() => updateEntry(entry.id)}
-                            disabled={editEntry.isSubmitting}
-                            className="px-2"
-                          >
+                          <Button size="sm" onClick={() => updateEntry(entry.id)} disabled={editEntry.isSubmitting}>
                             {editEntry.isSubmitting ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <Save className="w-4 h-4" />
                             )}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={cancelEdit}
-                            disabled={editEntry.isSubmitting}
-                            className="px-2 bg-transparent"
-                          >
+                          <Button size="sm" variant="outline" onClick={cancelEdit} disabled={editEntry.isSubmitting}>
                             <X className="w-4 h-4" />
                           </Button>
                         </>
                       ) : (
                         <>
-                          <Button size="sm" variant="outline" onClick={() => startEdit(entry)} className="px-2">
+                          <Button size="sm" variant="outline" onClick={() => startEdit(entry)}>
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button
                             size="sm"
-                            variant="destructive"
+                            variant="outline"
                             onClick={() => deleteEntry(entry.id)}
-                            className="px-2"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -623,23 +507,17 @@ export default function Component() {
                       <Textarea
                         value={editEntry.content}
                         onChange={(e) =>
-                          setEditEntry((prev) => ({
-                            ...prev,
-                            content: e.target.value,
-                            contentError: "",
-                          }))
+                          setEditEntry((prev) => ({ ...prev, content: e.target.value, contentError: "" }))
                         }
                         rows={4}
                         className={`resize-none ${editEntry.contentError ? "border-red-500" : ""}`}
-                        placeholder="Enter content..."
                         disabled={editEntry.isSubmitting}
                         maxLength={5000}
                       />
-                      {editEntry.contentError && <p className="text-red-500 text-xs">{editEntry.contentError}</p>}
-                      <p className="text-xs text-gray-500">{editEntry.content.length}/5000 characters</p>
+                      {editEntry.contentError && <p className="text-red-500 text-sm">{editEntry.contentError}</p>}
                     </div>
                   ) : (
-                    <div className="whitespace-pre-wrap bg-gray-50 p-3 rounded-md border text-sm leading-relaxed break-words">
+                    <div className="whitespace-pre-wrap bg-gray-50 p-4 rounded-lg text-sm leading-relaxed break-words">
                       {entry.content}
                     </div>
                   )}
@@ -649,9 +527,11 @@ export default function Component() {
           )}
         </div>
 
-        {/* Mobile footer */}
-        <div className="text-center mt-8 pb-4">
-          <p className="text-xs text-gray-500">📱 Optimized for mobile • Data stored in memory during session</p>
+        {/* Footer */}
+        <div className="text-center mt-12 pb-6">
+          <p className="text-sm text-gray-400">
+            {data.isGlobal ? "🌍 Global database • Real-time sync" : "📱 Mobile optimized • Deploy for global sharing"}
+          </p>
         </div>
       </div>
     </div>

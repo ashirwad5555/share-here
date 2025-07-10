@@ -13,14 +13,32 @@ interface DataStructure {
   lastModified: string
 }
 
-// Global in-memory storage that persists across requests
-let globalStorage: DataStructure = {
+// ---------------------------------------------------------------------------
+// Detect whether Vercel KV is configured.  If not, we transparently fall back
+// to an in-memory store so the app works in local / preview environments.
+// ---------------------------------------------------------------------------
+const isKVAvailable = () => {
+  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+}
+
+const STORAGE_KEY = "global-text-storage"
+
+// In-memory fallback storage for preview/development
+let memoryStore: DataStructure = {
   entries: [
     {
-      id: "demo-1",
-      title: "Welcome to Global Text Storage",
+      id: "demo-welcome",
+      title: "🌍 Welcome to Global Text Storage!",
       content:
-        "This is a demo entry to show how the app works. You can edit or delete this entry, and create new ones. Data is stored in memory during your session.",
+        "This is a demo entry showing how the app works.\n\n✅ In PREVIEW: Data is stored temporarily in memory\n✅ When DEPLOYED: Data is stored globally in Vercel KV database\n\nTry creating, editing, or deleting entries below!",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: "demo-features",
+      title: "📱 Mobile-Optimized Features",
+      content:
+        "• Touch-friendly interface\n• Responsive design for all screen sizes\n• Share button with native mobile sharing\n• PWA support for app-like experience\n• Fast loading and smooth animations\n• Works offline when installed",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -28,29 +46,76 @@ let globalStorage: DataStructure = {
   lastModified: new Date().toISOString(),
 }
 
-// Helper to ensure data structure is valid
-function validateAndFixData(data: any): DataStructure {
-  if (!data || typeof data !== "object") {
-    return globalStorage
+// Data access functions with automatic fallback
+async function getData(): Promise<DataStructure> {
+  if (isKVAvailable()) {
+    try {
+      // Dynamic import to avoid errors when KV isn't available
+      const { kv } = await import("@vercel/kv")
+      const data = await kv.get<DataStructure>(STORAGE_KEY)
+
+      if (!data || !Array.isArray(data.entries)) {
+        // Initialize KV with demo data if empty
+        const initialData: DataStructure = {
+          entries: [
+            {
+              id: "global-welcome",
+              title: "🌍 Global Database Active!",
+              content:
+                "Congratulations! Your Vercel KV database is now active.\n\n✅ This data is shared globally\n✅ Everyone sees the same content\n✅ Changes sync in real-time\n✅ Data persists forever\n\nYou can now share your URL with anyone!",
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+          lastModified: new Date().toISOString(),
+        }
+        await kv.set(STORAGE_KEY, initialData)
+        return initialData
+      }
+      return data
+    } catch (error) {
+      console.error("❌ KV Error, falling back to memory:", error)
+      return memoryStore
+    }
   }
 
-  return {
-    entries: Array.isArray(data.entries) ? data.entries : [],
-    lastModified: data.lastModified || new Date().toISOString(),
+  // Fallback to memory store
+  return memoryStore
+}
+
+async function saveData(data: DataStructure): Promise<void> {
+  if (isKVAvailable()) {
+    try {
+      const { kv } = await import("@vercel/kv")
+      await kv.set(STORAGE_KEY, data)
+      console.log("✅ Data saved to Vercel KV")
+    } catch (error) {
+      console.error("❌ KV Save Error, using memory:", error)
+      memoryStore = data
+    }
+  } else {
+    memoryStore = data
   }
 }
 
 // GET - Read all entries
 export async function GET() {
   try {
-    console.log("📖 GET request - returning", globalStorage.entries.length, "entries")
+    const storageType = isKVAvailable() ? "vercel-kv" : "memory-preview"
+    console.log(`📖 GET request - using ${storageType}`)
+
+    const data = await getData()
+
+    console.log(`✅ Loaded ${data.entries.length} entries from ${storageType}`)
 
     return NextResponse.json(
       {
         success: true,
-        entries: globalStorage.entries,
-        lastModified: globalStorage.lastModified,
-        count: globalStorage.entries.length,
+        entries: data.entries,
+        lastModified: data.lastModified,
+        count: data.entries.length,
+        storage: storageType,
+        isGlobal: isKVAvailable(),
       },
       {
         headers: {
@@ -69,6 +134,8 @@ export async function GET() {
         entries: [],
         lastModified: new Date().toISOString(),
         count: 0,
+        storage: "error",
+        isGlobal: false,
       },
       { status: 500 },
     )
@@ -78,245 +145,147 @@ export async function GET() {
 // POST - Create new entry
 export async function POST(request: NextRequest) {
   try {
-    console.log("📝 POST request received")
+    const storageType = isKVAvailable() ? "vercel-kv" : "memory-preview"
+    console.log(`📝 POST request - using ${storageType}`)
 
     let body
     try {
       body = await request.json()
     } catch (parseError) {
-      console.error("❌ JSON parse error:", parseError)
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid JSON in request body",
-        },
-        { status: 400 },
-      )
+      return NextResponse.json({ success: false, error: "Invalid JSON in request body" }, { status: 400 })
     }
 
     const { title, content } = body
 
-    // Validate input with detailed messages
-    if (!title || typeof title !== "string" || !title.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Title is required and must be a non-empty string",
-        },
-        { status: 400 },
-      )
+    // Validate input
+    if (!title?.trim()) {
+      return NextResponse.json({ success: false, error: "Title is required" }, { status: 400 })
     }
 
-    if (!content || typeof content !== "string" || !content.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Content is required and must be a non-empty string",
-        },
-        { status: 400 },
-      )
+    if (!content?.trim()) {
+      return NextResponse.json({ success: false, error: "Content is required" }, { status: 400 })
     }
 
-    // Ensure global storage is valid
-    globalStorage = validateAndFixData(globalStorage)
+    // Get current data
+    const data = await getData()
 
-    // Create new entry with guaranteed unique ID
-    const timestamp = Date.now()
-    const randomSuffix = Math.random().toString(36).substring(2, 8)
+    // Create new entry
     const newEntry: TextEntry = {
-      id: `entry-${timestamp}-${randomSuffix}`,
+      id: `entry-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       title: title.trim(),
       content: content.trim(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
 
-    // Add to beginning of array
-    globalStorage.entries.unshift(newEntry)
-    globalStorage.lastModified = new Date().toISOString()
+    // Add to beginning
+    data.entries.unshift(newEntry)
+    data.lastModified = new Date().toISOString()
 
-    console.log(`✅ Created entry: "${newEntry.title}" (ID: ${newEntry.id})`)
-    console.log(`📊 Total entries: ${globalStorage.entries.length}`)
+    // Save data
+    await saveData(data)
+
+    console.log(`✅ Created entry: "${newEntry.title}"`)
 
     return NextResponse.json({
       success: true,
       entry: newEntry,
       message: "Entry created successfully",
-      totalEntries: globalStorage.entries.length,
+      totalEntries: data.entries.length,
+      storage: storageType,
+      isGlobal: isKVAvailable(),
     })
   } catch (error) {
     console.error("❌ POST error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Server error: ${error instanceof Error ? error.message : "Unknown error"}`,
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ success: false, error: "Failed to create entry" }, { status: 500 })
   }
 }
 
 // PUT - Update entry
 export async function PUT(request: NextRequest) {
   try {
-    console.log("✏️ PUT request received")
+    const storageType = isKVAvailable() ? "vercel-kv" : "memory-preview"
+    console.log(`✏️ PUT request - using ${storageType}`)
 
-    let body
-    try {
-      body = await request.json()
-    } catch (parseError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid JSON in request body",
-        },
-        { status: 400 },
-      )
-    }
-
+    const body = await request.json()
     const { id, title, content } = body
 
-    // Validate input
-    if (!id || typeof id !== "string") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Valid ID is required",
-        },
-        { status: 400 },
-      )
+    if (!id || !title?.trim() || !content?.trim()) {
+      return NextResponse.json({ success: false, error: "ID, title, and content are required" }, { status: 400 })
     }
 
-    if (!title || typeof title !== "string" || !title.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Title is required and must be a non-empty string",
-        },
-        { status: 400 },
-      )
-    }
+    const data = await getData()
+    const entryIndex = data.entries.findIndex((entry) => entry.id === id)
 
-    if (!content || typeof content !== "string" || !content.trim()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Content is required and must be a non-empty string",
-        },
-        { status: 400 },
-      )
-    }
-
-    // Ensure global storage is valid
-    globalStorage = validateAndFixData(globalStorage)
-
-    // Find entry
-    const entryIndex = globalStorage.entries.findIndex((entry) => entry.id === id)
     if (entryIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Entry with ID "${id}" not found`,
-        },
-        { status: 404 },
-      )
+      return NextResponse.json({ success: false, error: "Entry not found" }, { status: 404 })
     }
 
     // Update entry
     const updatedEntry = {
-      ...globalStorage.entries[entryIndex],
+      ...data.entries[entryIndex],
       title: title.trim(),
       content: content.trim(),
       updatedAt: new Date().toISOString(),
     }
 
-    globalStorage.entries[entryIndex] = updatedEntry
-    globalStorage.lastModified = new Date().toISOString()
+    data.entries[entryIndex] = updatedEntry
+    data.lastModified = new Date().toISOString()
 
-    console.log(`✅ Updated entry: "${updatedEntry.title}" (ID: ${id})`)
+    await saveData(data)
+
+    console.log(`✅ Updated entry: "${updatedEntry.title}"`)
 
     return NextResponse.json({
       success: true,
       entry: updatedEntry,
       message: "Entry updated successfully",
+      storage: storageType,
+      isGlobal: isKVAvailable(),
     })
   } catch (error) {
     console.error("❌ PUT error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Server error: ${error instanceof Error ? error.message : "Unknown error"}`,
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ success: false, error: "Failed to update entry" }, { status: 500 })
   }
 }
 
 // DELETE - Delete entry
 export async function DELETE(request: NextRequest) {
   try {
-    console.log("🗑️ DELETE request received")
+    const storageType = isKVAvailable() ? "vercel-kv" : "memory-preview"
+    console.log(`🗑️ DELETE request - using ${storageType}`)
 
-    let body
-    try {
-      body = await request.json()
-    } catch (parseError) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid JSON in request body",
-        },
-        { status: 400 },
-      )
-    }
-
+    const body = await request.json()
     const { id } = body
 
-    if (!id || typeof id !== "string") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Valid ID is required",
-        },
-        { status: 400 },
-      )
+    if (!id) {
+      return NextResponse.json({ success: false, error: "ID is required" }, { status: 400 })
     }
 
-    // Ensure global storage is valid
-    globalStorage = validateAndFixData(globalStorage)
+    const data = await getData()
+    const entryIndex = data.entries.findIndex((entry) => entry.id === id)
 
-    // Find and remove entry
-    const entryIndex = globalStorage.entries.findIndex((entry) => entry.id === id)
     if (entryIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Entry with ID "${id}" not found`,
-        },
-        { status: 404 },
-      )
+      return NextResponse.json({ success: false, error: "Entry not found" }, { status: 404 })
     }
 
-    const deletedEntry = globalStorage.entries.splice(entryIndex, 1)[0]
-    globalStorage.lastModified = new Date().toISOString()
+    const deletedEntry = data.entries.splice(entryIndex, 1)[0]
+    data.lastModified = new Date().toISOString()
 
-    console.log(`✅ Deleted entry: "${deletedEntry.title}" (ID: ${id})`)
-    console.log(`📊 Remaining entries: ${globalStorage.entries.length}`)
+    await saveData(data)
+
+    console.log(`✅ Deleted entry: "${deletedEntry.title}"`)
 
     return NextResponse.json({
       success: true,
       deletedEntry,
       message: "Entry deleted successfully",
-      remainingEntries: globalStorage.entries.length,
+      remainingEntries: data.entries.length,
+      storage: storageType,
+      isGlobal: isKVAvailable(),
     })
   } catch (error) {
     console.error("❌ DELETE error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: `Server error: ${error instanceof Error ? error.message : "Unknown error"}`,
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ success: false, error: "Failed to delete entry" }, { status: 500 })
   }
 }
