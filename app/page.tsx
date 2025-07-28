@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/hooks/use-toast"
 import {
   Trash2,
   Edit,
@@ -13,8 +13,6 @@ import {
   Save,
   X,
   RefreshCw,
-  CheckCircle,
-  AlertCircle,
   Loader2,
   Share2,
   Globe,
@@ -24,6 +22,7 @@ import {
   Calendar,
 } from "lucide-react"
 import LoginForm from "@/components/login-form"
+import Chatbot from "@/components/chatbot"
 
 interface TextEntry {
   id: string
@@ -64,6 +63,7 @@ interface AuthUser {
 }
 
 export default function Component() {
+  const { toast } = useToast()
   const [authToken, setAuthToken] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState(true)
@@ -84,10 +84,6 @@ export default function Component() {
 
   const [isLoading, setIsLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [notification, setNotification] = useState<{
-    type: "success" | "error"
-    message: string
-  } | null>(null)
 
   const [newEntry, setNewEntry] = useState<FormState>({
     title: "",
@@ -106,10 +102,16 @@ export default function Component() {
   })
 
   // Show notification helper
-  const showNotification = useCallback((type: "success" | "error", message: string) => {
-    setNotification({ type, message })
-    setTimeout(() => setNotification(null), 4000)
-  }, [])
+  const showNotification = useCallback(
+    (type: "success" | "error", message: string) => {
+      toast({
+        title: type === "success" ? "Success" : "Error",
+        description: message,
+        variant: type === "error" ? "destructive" : "default",
+      })
+    },
+    [toast],
+  )
 
   // Check authentication on mount
   useEffect(() => {
@@ -201,7 +203,6 @@ export default function Component() {
         method: "GET",
         headers: {
           "Cache-Control": "no-cache",
-          Authorization: `Bearer ${authToken}`,
         },
       })
 
@@ -248,7 +249,6 @@ export default function Component() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           title: newEntry.title.trim(),
@@ -298,7 +298,6 @@ export default function Component() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
           id,
@@ -345,7 +344,6 @@ export default function Component() {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({ id }),
       })
@@ -460,26 +458,6 @@ export default function Component() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Notification */}
-        {notification && (
-          <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2">
-            <Alert
-              className={`shadow-lg border-0 ${
-                notification.type === "success"
-                  ? "bg-green-50 text-green-800 border-green-200"
-                  : "bg-red-50 text-red-800 border-red-200"
-              }`}
-            >
-              {notification.type === "success" ? (
-                <CheckCircle className="h-4 w-4" />
-              ) : (
-                <AlertCircle className="h-4 w-4" />
-              )}
-              <AlertDescription className="font-medium">{notification.message}</AlertDescription>
-            </Alert>
-          </div>
-        )}
-
         {/* Header */}
         <div className="mb-8">
           <Card className="shadow-xl border-0 bg-white/80 backdrop-blur-sm">
@@ -507,6 +485,7 @@ export default function Component() {
                       {currentUser.role}
                     </span>
                   </div>
+                  <Chatbot />
                   <Button
                     variant="outline"
                     onClick={handleLogout}

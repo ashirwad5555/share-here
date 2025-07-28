@@ -50,6 +50,11 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
     }
   }
 
+  const quickLogin = (username: string, password: string) => {
+    setFormData({ username, password })
+    setError("")
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -137,6 +142,49 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                 )}
               </Button>
             </form>
+
+            {/* Demo Accounts */}
+            <div className="pt-6 border-t border-slate-200">
+              <p className="text-sm text-slate-600 mb-4 text-center">Demo Accounts:</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => quickLogin("admin", "admin123")}
+                  className="text-xs"
+                  disabled={isLoading}
+                >
+                  Admin
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => quickLogin("john", "john123")}
+                  className="text-xs"
+                  disabled={isLoading}
+                >
+                  John
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => quickLogin("sarah", "sarah123")}
+                  className="text-xs"
+                  disabled={isLoading}
+                >
+                  Sarah
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => quickLogin("demo", "demo123")}
+                  className="text-xs"
+                  disabled={isLoading}
+                >
+                  Demo
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

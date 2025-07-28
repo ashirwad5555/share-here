@@ -13,10 +13,7 @@ interface DataStructure {
   lastModified: string
 }
 
-// ---------------------------------------------------------------------------
-// Detect whether Vercel KV is configured.  If not, we transparently fall back
-// to an in-memory store so the app works in local / preview environments.
-// ---------------------------------------------------------------------------
+// Check if Vercel KV is available
 const isKVAvailable = () => {
   return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
 }
@@ -28,7 +25,7 @@ let memoryStore: DataStructure = {
   entries: [
     {
       id: "demo-welcome",
-      title: "🌍 Welcome to Global Text Storage!",
+      title: "🌍 Welcome to Your Notes App!",
       content:
         "This is a demo entry showing how the app works.\n\n✅ In PREVIEW: Data is stored temporarily in memory\n✅ When DEPLOYED: Data is stored globally in Vercel KV database\n\nTry creating, editing, or deleting entries below!",
       createdAt: new Date().toISOString(),
@@ -36,9 +33,9 @@ let memoryStore: DataStructure = {
     },
     {
       id: "demo-features",
-      title: "📱 Mobile-Optimized Features",
+      title: "📱 App Features",
       content:
-        "• Touch-friendly interface\n• Responsive design for all screen sizes\n• Share button with native mobile sharing\n• PWA support for app-like experience\n• Fast loading and smooth animations\n• Works offline when installed",
+        "• Secure authentication system\n• Create, edit, and delete notes\n• AI-powered chat assistant\n• Responsive design for all devices\n• Real-time data synchronization\n• Works offline when installed as PWA",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
