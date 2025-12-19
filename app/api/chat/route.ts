@@ -1,65 +1,97 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { verifySessionToken } from "@/lib/auth"
+import { generateText } from "ai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { message, history = [] } = body
+    const { message, token } = body
 
-    if (!message?.trim()) {
+    // Verify authentication
+    if (!token) {
+      return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 })
+    }
+
+    const session = verifySessionToken(token)
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Invalid or expired token" }, { status: 401 })
+    }
+
+    // Check if message is provided
+    if (!message || typeof message !== "string") {
       return NextResponse.json({ success: false, error: "Message is required" }, { status: 400 })
     }
 
-    if (!process.env.GEMINI_API_KEY) {
+    // Check for API key - support both environment variable names
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY
+    if (!apiKey) {
       return NextResponse.json(
         {
           success: false,
-          error: "Gemini API key not configured. Please add GEMINI_API_KEY to your environment variables.",
+          error:
+            "AI chat is not configured. Please add GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY to environment variables.",
         },
-        { status: 500 },
+        { status: 503 },
       )
     }
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    // Use the latest stable model
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" })
+    console.log(
+      `🤖 AI Chat request from user ${session.username} (ID: ${session.userId}): ${message.substring(0, 50)}...`,
+    )
 
-    // Build conversation history for context
-    let conversationContext = ""
-    if (history.length > 0) {
-      conversationContext =
-        history
-          .slice(-10) // Keep last 10 messages for context
-          .map((msg: any) => `${msg.role}: ${msg.content}`)
-          .join("\n") + "\n"
-    }
+    // Create Google provider with explicit API key
+    const google = createGoogleGenerativeAI({
+      apiKey: apiKey,
+    })
 
-    // Create the prompt with context
-    const prompt = `You are a helpful AI assistant integrated into a notes application. Be concise, friendly, and helpful. Here's the conversation history:
+    // Generate response using Gemini
+    const { text } = await generateText({
+      model: google("gemini-1.5-flash"),
+      prompt: `You are a helpful AI assistant for a personal notes application. The user ${session.name} is asking: ${message}
 
-${conversationContext}
+Please provide a helpful, concise response. If they're asking about note-taking, organization, or productivity, provide specific advice. Keep responses under 200 words unless more detail is specifically requested.`,
+      maxTokens: 300,
+    })
 
-User: ${message}`
+    console.log(`✅ AI response generated for user ${session.username}`)
 
-    // Generate response
-    const response = await model.generateContent(prompt)
-    const reply = response.response.text()
-
-    return NextResponse.json({ success: true, reply }, { status: 200 })
+    return NextResponse.json({
+      success: true,
+      response: text,
+    })
   } catch (error) {
-    console.error("Error generating response:", error)
+    console.error("❌ AI Chat error:", error)
 
     // Handle specific API errors
-    if (error instanceof Error && error.message.includes("404")) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "The AI model is currently unavailable. Please try again later.",
-        },
-        { status: 500 },
-      )
+    if (error instanceof Error) {
+      if (error.message.includes("API key")) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Invalid API key. Please check your GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY configuration.",
+          },
+          { status: 503 },
+        )
+      }
+
+      if (error.message.includes("quota") || error.message.includes("limit")) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "API quota exceeded. Please try again later.",
+          },
+          { status: 429 },
+        )
+      }
     }
 
-    return NextResponse.json({ success: false, error: "Failed to generate response" }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: false,
+        error: "AI service temporarily unavailable. Please try again later.",
+      },
+      { status: 503 },
+    )
   }
 }

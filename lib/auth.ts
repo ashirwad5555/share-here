@@ -1,13 +1,7 @@
+import { USERS, type User } from './users'
+
 const AUTH_SECRET = process.env.AUTH_SECRET || "your-super-secret-key-change-this-in-production"
 const SESSION_DURATION = 24 * 60 * 60 * 1000 // 24 hours
-
-export interface User {
-  id: string
-  username: string
-  passwordHash: string
-  role: "admin" | "user" | "demo"
-  name: string
-}
 
 export interface AuthSession {
   userId: string
@@ -17,40 +11,12 @@ export interface AuthSession {
   expiresAt: number
 }
 
-// Static users for demo - in production, these would be in a database
-const USERS: User[] = [
-  {
-    id: "1",
-    username: "admin",
-    passwordHash: "admin123", // In production, this would be properly hashed
-    role: "admin",
-    name: "Administrator",
-  },
-  {
-    id: "2",
-    username: "john",
-    passwordHash: "john123",
-    role: "user",
-    name: "John Doe",
-  },
-  {
-    id: "3",
-    username: "sarah",
-    passwordHash: "sarah123",
-    role: "user",
-    name: "Sarah Wilson",
-  },
-  {
-    id: "4",
-    username: "demo",
-    passwordHash: "demo123",
-    role: "demo",
-    name: "Demo User",
-  },
-]
-
 export function findUserByUsername(username: string): User | null {
   return USERS.find((user) => user.username.toLowerCase() === username.toLowerCase()) || null
+}
+
+export function findUserById(id: string): User | null {
+  return USERS.find((user) => user.id === id) || null
 }
 
 export async function authenticateUser(username: string, password: string): Promise<User | null> {
@@ -101,5 +67,5 @@ export function getUserFromSession(token: string): User | null {
     return null
   }
 
-  return findUserByUsername(session.username)
+  return findUserById(session.userId)
 }
